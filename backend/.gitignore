@@ -1,2 +1,10 @@
+venv/
 __pycache__/
-magt/
+*.pyc
+.env
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+.DS_Store
+.env.example
+__server.py
