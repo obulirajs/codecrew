@@ -37,7 +37,7 @@ config.py       pydantic-settings, fails fast on missing secrets
   - 1.2 List tickets assigned to me (CDC-13): done
   - 1.3 JIRA client wrapper (CDC-14): done
   - 1.4 Extract structured acceptance criteria (CDC-15): done
-  - 1.5: not started
+  - 1.5 Unit tests with mocked JIRA API (CDC-16): done
 
 ## Local dev
 ```bash
