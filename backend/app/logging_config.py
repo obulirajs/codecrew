@@ -3,12 +3,19 @@ Basic structured logging. Every log line is a single-line JSON object so
 it's trivially greppable/parseable - this is the seed for Epic 7's
 request-ID correlation later (each agent hop will add a request_id field
 to the `extra` dict passed to these loggers).
+
+Story 0.7 (CDC-18): the same JSON lines are also written to a local
+rotating log file, so past requests can be inspected after the fact and
+so pointing this at a real log aggregator later (ELK, CloudWatch,
+Datadog) needs no format change.
 """
 
 import json
 import logging
 import sys
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 
 class JsonFormatter(logging.Formatter):
@@ -27,10 +34,23 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload)
 
 
-def configure_logging(level: str = "INFO") -> None:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
+def configure_logging(
+    level: str = "INFO",
+    log_file_path: str = "logs/codecrew.log",
+    log_file_max_bytes: int = 5_000_000,
+    log_file_backup_count: int = 3,
+) -> None:
+    formatter = JsonFormatter()
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(formatter)
+
+    Path(log_file_path).parent.mkdir(parents=True, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        log_file_path, maxBytes=log_file_max_bytes, backupCount=log_file_backup_count
+    )
+    file_handler.setFormatter(formatter)
 
     root = logging.getLogger()
-    root.handlers = [handler]
+    root.handlers = [stream_handler, file_handler]
     root.setLevel(level)

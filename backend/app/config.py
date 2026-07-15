@@ -34,6 +34,9 @@ class Settings(BaseSettings):
 
     port: int = 8000
     log_level: str = "INFO"
+    log_file_path: str = "logs/codecrew.log"
+    log_file_max_bytes: int = 5_000_000
+    log_file_backup_count: int = 3
 
     @property
     def cheap_model(self) -> str:

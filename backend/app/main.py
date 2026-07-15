@@ -15,7 +15,13 @@ from app.config import get_settings
 from app.logging_config import configure_logging
 from app.orchestrator.graph import orchestrator_graph
 
-configure_logging()
+_settings = get_settings()
+configure_logging(
+    level=_settings.log_level,
+    log_file_path=_settings.log_file_path,
+    log_file_max_bytes=_settings.log_file_max_bytes,
+    log_file_backup_count=_settings.log_file_backup_count,
+)
 logger = logging.getLogger("codecrew.main")
 
 app = FastAPI(title="CodeCrew Orchestrator")
