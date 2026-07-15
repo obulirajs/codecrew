@@ -50,6 +50,7 @@ async def teams_messages(request: Request):
     Story 0.1: acknowledge any @-mention within 3s.
     Story 0.2: normalize the payload before it reaches the orchestrator.
     Story 0.3: run it through the orchestrator graph for intent classification.
+    Story 1.1: reply with the jira_agent's ticket summary when available.
     """
     payload = await request.json()
 
@@ -63,7 +64,8 @@ async def teams_messages(request: Request):
 
     result = orchestrator_graph.invoke({"event": event})
     intent = result.get("intent", "unknown")
+    reply_text = result.get("reply_text") or f"Got it - classified as: {intent}"
 
-    await send_reply(payload, f"Got it - classified as: {intent}")
+    await send_reply(payload, reply_text)
 
     return {"received": True, "intent": intent}
