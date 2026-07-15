@@ -18,6 +18,30 @@ _RATE_LIMIT_MAX_RETRIES = 3
 _DEFAULT_BACKOFF_SECONDS = 2.0
 
 
+def adf_to_text(node: Optional[dict]) -> str:
+    """
+    Flatten an Atlassian Document Format node (e.g. an issue's `description`
+    field) into plain text - JIRA REST v3 returns rich-text fields as ADF
+    JSON, not plain text or markdown. Shared by anything that reads issue
+    text: the jira_agent chat replies and the CDC-15 ticket-spec extractor.
+    """
+    if not node:
+        return ""
+
+    parts: list[str] = []
+
+    def walk(n: dict) -> None:
+        if n.get("type") == "text":
+            parts.append(n.get("text", ""))
+        for child in n.get("content", []) or []:
+            walk(child)
+        if n.get("type") == "paragraph":
+            parts.append("\n")
+
+    walk(node)
+    return "".join(parts).strip()
+
+
 class JiraClientError(Exception):
     """Base class for all JIRA client errors."""
 

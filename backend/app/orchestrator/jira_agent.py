@@ -23,6 +23,7 @@ from app.clients.jira_client import (
     JiraAuthenticationError,
     JiraClient,
     JiraIssueNotFoundError,
+    adf_to_text,
 )
 from app.orchestrator.state import OrchestratorState
 
@@ -43,28 +44,6 @@ def _extract_ticket_key(text: str) -> Optional[str]:
 
 def _looks_like_list_request(text: str) -> bool:
     return bool(_LIST_ASSIGNED_PATTERN.search(text))
-
-
-def _adf_to_text(node: Optional[dict]) -> str:
-    """
-    Flatten an Atlassian Document Format node into plain text - the JIRA
-    REST v3 `description` field is ADF JSON, not plain text or markdown.
-    """
-    if not node:
-        return ""
-
-    parts: list[str] = []
-
-    def walk(n: dict) -> None:
-        if n.get("type") == "text":
-            parts.append(n.get("text", ""))
-        for child in n.get("content", []) or []:
-            walk(child)
-        if n.get("type") == "paragraph":
-            parts.append("\n")
-
-    walk(node)
-    return "".join(parts).strip()
 
 
 def _summarize(description: str, limit: int = _DESCRIPTION_SUMMARY_LIMIT) -> str:
@@ -108,7 +87,7 @@ def handle_jira_query(state: OrchestratorState) -> OrchestratorState:
     title = fields["summary"]
     status = fields["status"]["name"]
     assignee = fields["assignee"]["displayName"] if fields.get("assignee") else "Unassigned"
-    description_summary = _summarize(_adf_to_text(fields.get("description")))
+    description_summary = _summarize(adf_to_text(fields.get("description")))
 
     reply_lines = [
         f"{ticket_key}: {title}",

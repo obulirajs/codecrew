@@ -12,7 +12,7 @@ Python, FastAPI, LangGraph, Anthropic Claude API (with a config-driven switch to
 ## Architecture (current)
 ```
 adapters/       chat-platform in/out ONLY (Teams so far; Slack/Google Chat later - same NormalizedEvent contract)
-clients/        external API wrappers (jira_client.py - JIRA REST v3, auth+retries+typed errors; github_client.py comes in Epic 3)
+clients/        external API wrappers (jira_client.py - JIRA REST v3, auth+retries+typed errors; jira_ticket_spec.py - pure data-shaping on top of it for the future codegen agent; github_client.py comes in Epic 3)
 orchestrator/   LangGraph state, nodes, graph wiring - one node per agent capability
 llm_client.py   single entry point for all LLM calls (provider switch lives here only)
 main.py         FastAPI routes
@@ -36,7 +36,8 @@ config.py       pydantic-settings, fails fast on missing secrets
   - 1.1 Show ticket summary on request (CDC-12): done
   - 1.2 List tickets assigned to me (CDC-13): done
   - 1.3 JIRA client wrapper (CDC-14): done
-  - 1.4, 1.5: not started
+  - 1.4 Extract structured acceptance criteria (CDC-15): done
+  - 1.5: not started
 
 ## Local dev
 ```bash
