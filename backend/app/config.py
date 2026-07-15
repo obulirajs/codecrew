@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     teams_app_password: str
     teams_tenant_id: str
 
+    jira_base_url: str
+    jira_email: str
+    jira_api_token: str
+    jira_project_key: str
+
     llm_provider: str = "ollama"
     cheap_model_anthropic: str = "claude-haiku-4-5-20251001"
     strong_model_anthropic: str = "claude-sonnet-5"
