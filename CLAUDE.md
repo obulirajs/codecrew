@@ -30,10 +30,13 @@ config.py       pydantic-settings, fails fast on missing secrets
 
 ## Status (update after each story - keep this section short, just epic/story + state)
 - **Epic 0** (CDC-5): Done. Teams <-> FastAPI <-> LangGraph round trip verified against real Teams (not just Web Chat). GitHub for Atlassian connected (commits/PRs auto-link to tickets; Smart Commits enabled).
+  - 0.7 Local rotating file logging (CDC-18): done
+  - 0.8 Request correlation ID across all log lines (CDC-19): done
 - **Epic 1** (CDC-11): In progress.
   - 1.1 Show ticket summary on request (CDC-12): done
+  - 1.2 List tickets assigned to me (CDC-13): done
   - 1.3 JIRA client wrapper (CDC-14): done
-  - 1.2, 1.4, 1.5: not started
+  - 1.4, 1.5: not started
 
 ## Local dev
 ```bash

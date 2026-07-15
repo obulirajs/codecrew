@@ -1,13 +1,16 @@
 """
 Basic structured logging. Every log line is a single-line JSON object so
-it's trivially greppable/parseable - this is the seed for Epic 7's
-request-ID correlation later (each agent hop will add a request_id field
-to the `extra` dict passed to these loggers).
+it's trivially greppable/parseable.
 
 Story 0.7 (CDC-18): the same JSON lines are also written to a local
 rotating log file, so past requests can be inspected after the fact and
 so pointing this at a real log aggregator later (ELK, CloudWatch,
 Datadog) needs no format change.
+
+Story 0.8 (CDC-19): every line also carries `correlation_id`, read from
+the contextvar in app/correlation.py - so one incoming Teams activity's
+logs can be traced across the adapter, orchestrator, and clients by
+grepping a single ID, without threading it through every call signature.
 """
 
 import json
@@ -17,6 +20,8 @@ from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from app.correlation import get_correlation_id
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -24,6 +29,7 @@ class JsonFormatter(logging.Formatter):
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
+            "correlation_id": get_correlation_id(),
             "message": record.getMessage(),
         }
         # Pull through any extra fields (e.g. request_id) attached to the record

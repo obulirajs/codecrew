@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request
 
 from app.adapters.teams_adapter import normalize_teams_activity, send_reply
 from app.config import get_settings
+from app.correlation import new_correlation_id, reset_correlation_id, set_correlation_id
 from app.logging_config import configure_logging
 from app.orchestrator.graph import orchestrator_graph
 
@@ -57,21 +58,28 @@ async def teams_messages(request: Request):
     Story 0.2: normalize the payload before it reaches the orchestrator.
     Story 0.3: run it through the orchestrator graph for intent classification.
     Story 1.1: reply with the jira_agent's ticket summary when available.
+    Story 0.8: tag every log line from this request with one correlation ID,
+    reusing the activity's own `id` (redeliveries share it) when present.
     """
     payload = await request.json()
 
-    activity_type = payload.get("type")
-    if activity_type != "message":
-        logger.debug("Ignoring non-message activity: %s", activity_type)
-        return {"received": True, "ignored": True, "activity_type": activity_type}
+    correlation_id = new_correlation_id(payload.get("id"))
+    token = set_correlation_id(correlation_id)
+    try:
+        activity_type = payload.get("type")
+        if activity_type != "message":
+            logger.debug("Ignoring non-message activity: %s", activity_type)
+            return {"received": True, "ignored": True, "activity_type": activity_type}
 
-    event = normalize_teams_activity(payload)
-    logger.info("Received Teams message", extra={"user": event.user, "channel": event.channel})
+        event = normalize_teams_activity(payload)
+        logger.info("Received Teams message", extra={"user": event.user, "channel": event.channel})
 
-    result = orchestrator_graph.invoke({"event": event})
-    intent = result.get("intent", "unknown")
-    reply_text = result.get("reply_text") or f"Got it - classified as: {intent}"
+        result = orchestrator_graph.invoke({"event": event})
+        intent = result.get("intent", "unknown")
+        reply_text = result.get("reply_text") or f"Got it - classified as: {intent}"
 
-    await send_reply(payload, reply_text)
+        await send_reply(payload, reply_text)
 
-    return {"received": True, "intent": intent}
+        return {"received": True, "intent": intent}
+    finally:
+        reset_correlation_id(token)

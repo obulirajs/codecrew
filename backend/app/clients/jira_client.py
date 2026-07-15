@@ -5,7 +5,7 @@ agents that need to read from Jira (story 1.3, CDC-14).
 
 import logging
 import time
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -51,13 +51,19 @@ class JiraClient:
         """Fetch a single issue by key, e.g. "CDC-6"."""
         return self._request("GET", f"/issue/{issue_key}")
 
-    def search_issues(self, jql: str, max_results: int = 50) -> dict[str, Any]:
-        """Search issues using JQL, e.g. f"project = {client.project_key}"."""
-        return self._request(
-            "GET",
-            "/search",
-            params={"jql": jql, "maxResults": max_results},
-        )
+    def search_issues(self, jql: str, max_results: int = 50, fields: Optional[list[str]] = None) -> dict[str, Any]:
+        """
+        Search issues using JQL, e.g. f"project = {client.project_key}".
+
+        Uses /search/jql (not the deprecated /search - Atlassian removed it,
+        see https://developer.atlassian.com/changelog/#CHANGE-2046). This
+        endpoint is cursor-paginated: the response has "issues", "isLast",
+        and "nextPageToken" instead of a "total" count.
+        """
+        params: dict[str, Any] = {"jql": jql, "maxResults": max_results}
+        if fields:
+            params["fields"] = ",".join(fields)
+        return self._request("GET", "/search/jql", params=params)
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         transient_attempts = 0
