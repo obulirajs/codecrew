@@ -3,3 +3,4 @@ agentic-devops-epics-and-stories.pdf
 .agents/
 keyfob.txt
 log2excel.csv
+.env.example

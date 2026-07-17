@@ -43,6 +43,7 @@ config.py       pydantic-settings, fails fast on missing secrets
   - 1.5 Unit tests with mocked JIRA API (CDC-16): done
 - **Epic 2** (CDC-40): In progress.
   - 2.2 Codegen works against a real repo checkout via git worktree (CDC-42): done
+  - 2.7 Prefer CLAUDE_CODE_OAUTH_TOKEN over API key when available (CDC-50): done
 
 ## Local dev
 ```bash
