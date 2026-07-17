@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     # point of use if this is unset, rather than blocking app startup.
     repo_clone_path: Optional[str] = None
 
+    # Story 2.7 (CDC-50): if set, the codegen agent authenticates the Agent
+    # SDK with this (individual Claude subscription) instead of
+    # ANTHROPIC_API_KEY, so local dev bills against subscription Agent SDK
+    # credit rather than pay-as-you-go API credits. Does NOT affect
+    # chat_completion() (intent classifier, JIRA agent), which always uses
+    # ANTHROPIC_API_KEY.
+    claude_code_oauth_token: Optional[str] = None
+
     @property
     def cheap_model(self) -> str:
         return self.cheap_model_ollama if self.llm_provider == "ollama" else self.cheap_model_anthropic
