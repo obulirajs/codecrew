@@ -13,6 +13,7 @@ Python, FastAPI, LangGraph, Anthropic Claude API (with a config-driven switch to
 ```
 adapters/       chat-platform in/out ONLY (Teams so far; Slack/Google Chat later - same NormalizedEvent contract)
 clients/        external API wrappers (jira_client.py - JIRA REST v3, auth+retries+typed errors; jira_ticket_spec.py - pure data-shaping on top of it for the future codegen agent; github_client.py comes in Epic 3)
+codegen/        Epic 2 codegen agent internals (workspace.py - git worktree lifecycle per ticket off one canonical clone; agent.py - headless invocation via the Claude Agent SDK, not a raw Messages API call - Epic 2's architecture decision, since codegen needs to explore the real repo before writing code)
 orchestrator/   LangGraph state, nodes, graph wiring - one node per agent capability
 llm_client.py   single entry point for all LLM calls (provider switch lives here only)
 main.py         FastAPI routes
@@ -24,9 +25,11 @@ config.py       pydantic-settings, fails fast on missing secrets
 - **Logging**: structured JSON via `app/logging_config.py`. One logger per module: `codecrew.<module_name>`.
 - **adapters/ vs clients/**: adapters are chat platforms only. clients are external system APIs (Jira, GitHub, CI). Don't mix these - it's what keeps the chat layer swappable.
 - **LLM calls**: always go through `app/llm_client.py`'s `chat_completion()`. Never instantiate an Anthropic or Ollama client anywhere else. Provider chosen via `LLM_PROVIDER` env var (`anthropic` | `ollama`); cheap/strong model tiers resolved via `Settings.cheap_model` / `Settings.strong_model`.
+- **Prompt caching**: `chat_completion()` applies Anthropic prompt caching (`cache_control`) to system prompts over 500 characters - shorter ones pass through as a plain string, uncached. Cache hit/write token counts (`cache_creation_input_tokens` / `cache_read_input_tokens`) are logged at debug level on every Anthropic call for verification.
 - **LangGraph**: one node per agent/capability. Routing is via conditional edges keyed on `state["intent"]`, not if/else chains in a single node.
 - **Blocking SDKs** (e.g. `botframework-connector`, which is sync): wrap in `asyncio.to_thread` so the FastAPI event loop isn't stalled.
 - **Bot Framework activities**: filter on `payload["type"] == "message"` before processing - Teams/Web Chat send `typing` events too.
+- **Pinned `starlette`/`uvicorn`**: `requirements.txt` pins both below what `claude-agent-sdk`'s own `mcp` dependency wants (it asks for `starlette>=0.48.0`/`uvicorn>=0.31.1`; we're on `starlette==0.38.6`/`uvicorn==0.30.6` for fastapi 0.115.0 compatibility). This works today but is a known latent conflict - see CDC-47. Don't casually bump either version without checking that ticket first.
 
 ## Status (update after each story - keep this section short, just epic/story + state)
 - **Epic 0** (CDC-5): Done. Teams <-> FastAPI <-> LangGraph round trip verified against real Teams (not just Web Chat). GitHub for Atlassian connected (commits/PRs auto-link to tickets; Smart Commits enabled).
@@ -38,6 +41,8 @@ config.py       pydantic-settings, fails fast on missing secrets
   - 1.3 JIRA client wrapper (CDC-14): done
   - 1.4 Extract structured acceptance criteria (CDC-15): done
   - 1.5 Unit tests with mocked JIRA API (CDC-16): done
+- **Epic 2** (CDC-40): In progress.
+  - 2.2 Codegen works against a real repo checkout via git worktree (CDC-42): done
 
 ## Local dev
 ```bash

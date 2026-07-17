@@ -8,6 +8,7 @@ for secrets, no hardcoding.
 """
 
 from functools import lru_cache
+from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -37,6 +38,12 @@ class Settings(BaseSettings):
     log_file_path: str = "logs/codecrew.log"
     log_file_max_bytes: int = 5_000_000
     log_file_backup_count: int = 3
+
+    # Story 2.2 (CDC-42): path to the one-time canonical clone the codegen
+    # agent cuts per-ticket worktrees from. Optional (not every environment
+    # runs codegen yet) - codegen fails fast with a specific error at the
+    # point of use if this is unset, rather than blocking app startup.
+    repo_clone_path: Optional[str] = None
 
     @property
     def cheap_model(self) -> str:
