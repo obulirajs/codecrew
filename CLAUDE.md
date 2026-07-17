@@ -44,6 +44,7 @@ config.py       pydantic-settings, fails fast on missing secrets
 - **Epic 2** (CDC-40): In progress.
   - 2.2 Codegen works against a real repo checkout via git worktree (CDC-42): done
   - 2.7 Prefer CLAUDE_CODE_OAUTH_TOKEN over API key when available (CDC-50): done
+  - Bug (CDC-51): fixed - re-running a ticket after its worktree was cleaned up falsely raised WorktreeInProgressError, because the duplicate check looked at branch existence, not actual worktree checkout state (`git worktree remove` leaves the branch behind). `create_worktree()` now checks `git worktree list --porcelain`; a stale branch is force-deleted before reuse. Leftover branches are kept after `remove_worktree()` (not auto-deleted) for post-mortem inspection of a failed run.
 
 ## Local dev
 ```bash
