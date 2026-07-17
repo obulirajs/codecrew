@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     llm_provider: str = "ollama"
     cheap_model_anthropic: str = "claude-haiku-4-5-20251001"
     strong_model_anthropic: str = "claude-sonnet-5"
-    cheap_model_ollama: str = "gemma3:4b"
+    cheap_model_ollama: str = "llama3.2:1b"
     strong_model_ollama: str = "qwen2.5-coder:7b"
     ollama_base_url: str = "http://localhost:11434"
 

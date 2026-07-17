@@ -11,6 +11,7 @@ Two responsibilities, matching stories 0.1 and 0.2:
 
 import asyncio
 import logging
+from functools import lru_cache
 
 from botbuilder.schema import Activity, ChannelAccount, ConversationAccount
 from botframework.connector import ConnectorClient
@@ -20,6 +21,22 @@ from app.config import get_settings
 from app.models.events import NormalizedEvent, Platform
 
 logger = logging.getLogger("codecrew.teams_adapter")
+
+
+@lru_cache
+def _get_credentials() -> MicrosoftAppCredentials:
+    """
+    Cached so the same MicrosoftAppCredentials instance - and its internal
+    bearer-token cache - is reused across every reply for the process
+    lifetime, instead of re-exchanging a token with Microsoft's OAuth
+    endpoint on every single call.
+    """
+    settings = get_settings()
+    return MicrosoftAppCredentials(
+        app_id=settings.teams_app_id,
+        password=settings.teams_app_password,
+        channel_auth_tenant=settings.teams_tenant_id,
+    )
 
 
 def normalize_teams_activity(payload: dict) -> NormalizedEvent:
@@ -54,11 +71,7 @@ def _send_reply_sync(payload: dict, reply_text: str, settings) -> None:
     service_url = payload["serviceUrl"]
     conversation_id = payload["conversation"]["id"]
 
-    credentials = MicrosoftAppCredentials(
-        app_id=settings.teams_app_id,
-        password=settings.teams_app_password,
-        channel_auth_tenant=settings.teams_tenant_id,  # required: single-tenant bot
-    )
+    credentials = _get_credentials()
     connector = ConnectorClient(credentials, base_url=service_url)
 
     reply_activity = Activity(
