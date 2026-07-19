@@ -27,11 +27,23 @@ files_changed empty, and cleans up the worktree immediately (nothing for
 Epic 3 to commit). If the agent makes no file changes AND doesn't raise
 that marker, that's an unexpected silent no-op, not a normal empty
 success - it's logged and raised as a CodegenError.
+
+Story 2.5 (CDC-45): once a diff is captured, the .py files in
+files_changed are run through ruff (`E9` syntax errors + `F` pyflakes -
+undefined names, unused imports, other obviously broken code - not ruff's
+full style/formatting rule surface) before handoff to Epic 3. Non-Python
+files are skipped, not linted. Violations populate lint_errors but do NOT
+change diff_text/files_changed or the worktree's kept-on-success
+lifecycle: real code exists, just flawed, so it stays inspectable in the
+worktree exactly like a clean run - whoever consumes CodegenResult must
+check lint_errors before committing anything.
 """
 
+import json
 import logging
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -68,6 +80,7 @@ class CodegenResult(BaseModel):
     files_changed: List[str]
     needs_clarification: bool = False
     clarifying_questions: List[str] = Field(default_factory=list)
+    lint_errors: List[str] = Field(default_factory=list)
 
 
 def _build_prompt(ticket_key: str, spec: TicketSpec) -> str:
@@ -130,6 +143,49 @@ def _run_git(args: List[str], cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
 
 
+def _lint_python_files(workspace: TicketWorkspace, files_changed: List[str]) -> List[str]:
+    """
+    Run ruff against the .py files in `files_changed`, scoped to E9 (syntax
+    errors) + F (pyflakes: undefined names, unused imports, other obviously
+    broken code) - a reasonably permissive rule set focused on genuine
+    correctness issues, not ruff's full style/formatting surface. Non-Python
+    files are skipped entirely - they're not run through a Python linter.
+
+    Invoked as `sys.executable -m ruff` (not a bare "ruff" on PATH) so it's
+    guaranteed to be the same ruff installed alongside this backend,
+    regardless of the worktree's or shell's PATH.
+    """
+    python_files = [f for f in files_changed if f.endswith(".py")]
+    if not python_files:
+        return []
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--select=E9,F", "--output-format=json", *python_files],
+        cwd=workspace.path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    # ruff check exits 0 (clean) or 1 (violations found) as normal outcomes -
+    # anything else means ruff itself failed to run (bad invocation, etc.).
+    if result.returncode not in (0, 1):
+        raise CodegenError(f"ruff failed for {workspace.ticket_key}: {result.stderr.strip()}")
+
+    if not result.stdout.strip():
+        return []
+
+    try:
+        violations = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise CodegenError(f"ruff produced unparseable output for {workspace.ticket_key}: {exc}") from exc
+
+    return [
+        f"{v['filename']}:{v['location']['row']}:{v['location']['column']}: {v['code']} {v['message']}"
+        for v in violations
+    ]
+
+
 def _capture_diff(workspace: TicketWorkspace) -> Tuple[str, List[str]]:
     """
     Stage everything - including new/untracked files - before diffing
@@ -160,19 +216,28 @@ async def generate_diff(ticket_key: str, spec: TicketSpec) -> CodegenResult:
     `ticket_key`, and return the actual diff it produced.
 
     Three outcomes:
-    - Normal success: the agent edited files: the worktree is left in
-      place (not cleaned up) so a later Epic 3 step can commit directly
-      from it.
+    - Normal success: the agent edited files, and ruff found nothing worth
+      flagging (or found nothing to check, e.g. no .py files touched): the
+      worktree is left in place (not cleaned up) so a later Epic 3 step
+      can commit directly from it.
     - Needs clarification (CDC-43): the agent flagged the acceptance
       criteria as unimplementable as written and made no changes. The
       worktree is cleaned up immediately - there's nothing for Epic 3 to
       commit - and the result carries needs_clarification=True plus the
       agent's clarifying_questions.
-    - Failure: the agent run itself raises, the diff can't be captured, or
-      the agent silently made no changes without flagging why (an
-      unexpected no-op, raised as CodegenError). Either way the worktree
-      is removed before the exception propagates, matching CDC-42's
-      original always-cleanup behavior on the failure path.
+    - Lint errors (CDC-45): the agent did write real code, but ruff found
+      genuine correctness problems in it (syntax errors, undefined names,
+      etc.). diff_text/files_changed are still populated - the flawed diff
+      stays inspectable - and the worktree is kept exactly like a clean
+      success (there's something worth fixing), but lint_errors is
+      non-empty as a clear "do not commit this as-is" signal for whoever
+      consumes the result next.
+    - Failure: the agent run itself raises, the diff can't be captured,
+      ruff itself fails to run, or the agent silently made no changes
+      without flagging why (an unexpected no-op, raised as CodegenError).
+      Either way the worktree is removed before the exception propagates,
+      matching CDC-42's original always-cleanup behavior on the failure
+      path.
     """
     prompt = _build_prompt(ticket_key, spec)
 
@@ -207,9 +272,18 @@ async def generate_diff(ticket_key: str, spec: TicketSpec) -> CodegenResult:
                 "clarification request."
             )
 
+        lint_errors = _lint_python_files(workspace, files_changed)
+        if lint_errors:
+            logger.warning(
+                "Codegen agent's diff has lint errors - must not be committed as-is",
+                extra={"ticket_key": ticket_key, "lint_errors": lint_errors},
+            )
+
     logger.info(
         "Generated diff for ticket",
-        extra={"ticket_key": ticket_key, "files_changed": files_changed},
+        extra={"ticket_key": ticket_key, "files_changed": files_changed, "lint_errors": lint_errors},
     )
 
-    return CodegenResult(diff_text=diff_text, summary=agent_text, files_changed=files_changed)
+    return CodegenResult(
+        diff_text=diff_text, summary=agent_text, files_changed=files_changed, lint_errors=lint_errors
+    )

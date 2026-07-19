@@ -1,10 +1,12 @@
 """
 Unit tests for app/codegen/diff.py (story 2.1, CDC-41; clarification-marker
-handling from story 2.3, CDC-43).
+handling from story 2.3, CDC-43; ruff lint validation from story 2.5,
+CDC-45).
 
-Both the Agent SDK call (run_headless) and git itself are mocked out -
+The Agent SDK call (run_headless), git, and ruff are all mocked out -
 these tests cover prompt content, marker parsing, diff-capture parsing,
-and orchestration, not a real agent run or a real repo.
+lint-output parsing, and orchestration, not a real agent run, a real repo,
+or a real ruff invocation.
 """
 
 from pathlib import Path
@@ -18,6 +20,7 @@ from app.codegen.diff import (
     CodegenResult,
     _build_prompt,
     _capture_diff,
+    _lint_python_files,
     _parse_clarification,
     _strip_clarification_block,
     generate_diff,
@@ -175,6 +178,56 @@ class TestCaptureDiff:
         assert files_changed == []
 
 
+class TestLintPythonFiles:
+    def test_no_python_files_skips_ruff_entirely(self):
+        with patch("app.codegen.diff.subprocess.run") as mock_run:
+            lint_errors = _lint_python_files(_WORKSPACE, ["README.md", "notes.txt"])
+
+        assert lint_errors == []
+        mock_run.assert_not_called()
+
+    def test_only_python_files_are_passed_to_ruff(self):
+        with patch(
+            "app.codegen.diff.subprocess.run", return_value=_completed(stdout="[]")
+        ) as mock_run:
+            _lint_python_files(_WORKSPACE, ["foo.py", "README.md", "bar.py"])
+
+        call_args = mock_run.call_args.args[0]
+        assert "foo.py" in call_args
+        assert "bar.py" in call_args
+        assert "README.md" not in call_args
+
+    def test_clean_result_returns_no_errors(self):
+        with patch("app.codegen.diff.subprocess.run", return_value=_completed(returncode=0, stdout="[]")):
+            assert _lint_python_files(_WORKSPACE, ["foo.py"]) == []
+
+    def test_violations_are_parsed_into_readable_strings(self):
+        violations_json = (
+            '[{"filename": "foo.py", "location": {"row": 3, "column": 5}, '
+            '"code": "F821", "message": "Undefined name `bar`"}]'
+        )
+        with patch(
+            "app.codegen.diff.subprocess.run", return_value=_completed(returncode=1, stdout=violations_json)
+        ):
+            lint_errors = _lint_python_files(_WORKSPACE, ["foo.py"])
+
+        assert lint_errors == ["foo.py:3:5: F821 Undefined name `bar`"]
+
+    def test_ruff_itself_failing_raises_codegen_error(self):
+        with patch(
+            "app.codegen.diff.subprocess.run", return_value=_completed(returncode=2, stderr="ruff blew up")
+        ):
+            with pytest.raises(CodegenError):
+                _lint_python_files(_WORKSPACE, ["foo.py"])
+
+    def test_unparseable_output_raises_codegen_error(self):
+        with patch(
+            "app.codegen.diff.subprocess.run", return_value=_completed(returncode=1, stdout="not json")
+        ):
+            with pytest.raises(CodegenError):
+                _lint_python_files(_WORKSPACE, ["foo.py"])
+
+
 class TestGenerateDiff:
     @pytest.mark.asyncio
     async def test_runs_agent_in_worktree_and_returns_structured_result(self):
@@ -182,7 +235,9 @@ class TestGenerateDiff:
             "app.codegen.diff.run_headless", new_callable=AsyncMock
         ) as mock_run_headless, patch(
             "app.codegen.diff._capture_diff", return_value=("diff text", ["foo.py"])
-        ) as mock_capture:
+        ) as mock_capture, patch(
+            "app.codegen.diff._lint_python_files", return_value=[]
+        ) as mock_lint:
             mock_ticket_workspace.return_value.__enter__.return_value = _WORKSPACE
             mock_ticket_workspace.return_value.__exit__.return_value = False
             mock_run_headless.return_value = "Added retry logic to the client."
@@ -195,10 +250,36 @@ class TestGenerateDiff:
         assert result.summary == "Added retry logic to the client."
         assert result.needs_clarification is False
         assert result.clarifying_questions == []
+        assert result.lint_errors == []
 
         mock_ticket_workspace.assert_called_once_with("CDC-41", _SPEC.summary, cleanup_on_success=False)
         assert mock_run_headless.call_args.args[0] == _WORKSPACE.path
         mock_capture.assert_called_once_with(_WORKSPACE)
+        mock_lint.assert_called_once_with(_WORKSPACE, ["foo.py"])
+
+    @pytest.mark.asyncio
+    async def test_lint_errors_populate_result_but_keep_diff_and_worktree(self):
+        with patch("app.codegen.diff.ticket_workspace") as mock_ticket_workspace, patch(
+            "app.codegen.diff.run_headless", new_callable=AsyncMock
+        ) as mock_run_headless, patch(
+            "app.codegen.diff._capture_diff", return_value=("diff text", ["foo.py"])
+        ), patch(
+            "app.codegen.diff._lint_python_files", return_value=["foo.py:3:5: F821 Undefined name `bar`"]
+        ), patch(
+            "app.codegen.diff.remove_worktree"
+        ) as mock_remove_worktree:
+            mock_ticket_workspace.return_value.__enter__.return_value = _WORKSPACE
+            mock_ticket_workspace.return_value.__exit__.return_value = False
+            mock_run_headless.return_value = "Added retry logic to the client."
+
+            result = await generate_diff("CDC-41", _SPEC)
+
+        assert result.lint_errors == ["foo.py:3:5: F821 Undefined name `bar`"]
+        assert result.diff_text == "diff text"
+        assert result.files_changed == ["foo.py"]
+        assert result.needs_clarification is False
+
+        mock_remove_worktree.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_agent_failure_propagates(self):

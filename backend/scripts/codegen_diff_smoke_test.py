@@ -41,8 +41,8 @@ async def main() -> None:
 
     spec = TicketSpec(
         summary="Add a comment to README.md explaining what this repo does",
-        acceptance_criteria=["Edit the file at /this/path/absolutely/does/not/exist.xyz"],
-        # acceptance_criteria=["A one-line comment is added near the top of README.md"],
+        # acceptance_criteria=["Edit the file at /this/path/absolutely/does/not/exist.xyz"],
+        acceptance_criteria=["A one-line comment is added near the top of README.md"],
         ticket_type="Task",
         labels=[],
     )
@@ -57,6 +57,8 @@ async def main() -> None:
     print(result.files_changed)
     print("\nneeds_clarification:")
     print(result.needs_clarification)
+    print("\nlint_errors:")
+    print(result.lint_errors)
     print("\nclarifying_questions:")
     print(result.clarifying_questions)
 

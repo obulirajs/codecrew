@@ -14,3 +14,4 @@ botbuilder-schema==4.16.0
 aiohttp==3.14.1
 ollama==0.3.3
 claude-agent-sdk==0.2.121
+ruff==0.15.22
