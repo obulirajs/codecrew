@@ -171,13 +171,33 @@ def remove_worktree(workspace: TicketWorkspace) -> None:
 
 
 @contextmanager
-def ticket_workspace(ticket_key: str, summary: str) -> Iterator[TicketWorkspace]:
+def ticket_workspace(
+    ticket_key: str, summary: str, cleanup_on_success: bool = True
+) -> Iterator[TicketWorkspace]:
     """
-    Create a worktree for `ticket_key`, yield it, and always remove it
-    afterward - whether the codegen work inside succeeds or raises.
+    Create a worktree for `ticket_key` and yield it.
+
+    By default (cleanup_on_success=True, CDC-42's original behavior),
+    the worktree is always removed afterward, whether the codegen work
+    inside succeeds or raises.
+
+    Story 2.1 (CDC-41) needs the opposite on the success path: the
+    worktree, with its real uncommitted file changes, must survive a
+    successful diff-generation run so Epic 3 can commit directly from
+    that same worktree/branch later - avoiding any risk of a saved patch
+    failing to reapply if main has moved on by then. Passing
+    cleanup_on_success=False keeps the worktree in that case.
+
+    Failure/error behavior is unchanged either way: an exception raised
+    inside the block always removes the worktree before propagating, so
+    a duplicate run doesn't collide with a half-finished one.
     """
     workspace = create_worktree(ticket_key, summary)
     try:
         yield workspace
-    finally:
+    except BaseException:
         remove_worktree(workspace)
+        raise
+    else:
+        if cleanup_on_success:
+            remove_worktree(workspace)

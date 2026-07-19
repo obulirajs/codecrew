@@ -24,6 +24,7 @@ config.py       pydantic-settings, fails fast on missing secrets
 - **Config**: all secrets/settings go through `app/config.py` (pydantic-settings). Never read `os.environ` elsewhere.
 - **Logging**: structured JSON via `app/logging_config.py`. One logger per module: `codecrew.<module_name>`.
 - **adapters/ vs clients/**: adapters are chat platforms only. clients are external system APIs (Jira, GitHub, CI). Don't mix these - it's what keeps the chat layer swappable.
+- **clients/ vs codegen/**: `clients/` holds thin, reusable wrappers around an external system's REST API (auth, retries, typed errors) - Jira today, GitHub/CI later. The Claude Agent SDK code in `codegen/` is NOT that: `query()` spawns a whole subprocess-based coding agent with its own tool loop (file edits, bash, repo exploration), not a REST call being wrapped. Think of `codegen/`'s three files (workspace.py, agent.py, diff.py) as a capability module - a peer of `orchestrator/jira_agent.py`, not of `clients/jira_client.py` - that just isn't wired into the LangGraph graph as a node yet. This is also why `codegen/agent.py` is deliberately exempt from the `llm_client.py` rule below - it's a headless agent process, not a raw completion call.
 - **LLM calls**: always go through `app/llm_client.py`'s `chat_completion()`. Never instantiate an Anthropic or Ollama client anywhere else. Provider chosen via `LLM_PROVIDER` env var (`anthropic` | `ollama`); cheap/strong model tiers resolved via `Settings.cheap_model` / `Settings.strong_model`.
 - **Prompt caching**: `chat_completion()` applies Anthropic prompt caching (`cache_control`) to system prompts over 500 characters - shorter ones pass through as a plain string, uncached. Cache hit/write token counts (`cache_creation_input_tokens` / `cache_read_input_tokens`) are logged at debug level on every Anthropic call for verification.
 - **LangGraph**: one node per agent/capability. Routing is via conditional edges keyed on `state["intent"]`, not if/else chains in a single node.
@@ -42,21 +43,7 @@ config.py       pydantic-settings, fails fast on missing secrets
   - 1.4 Extract structured acceptance criteria (CDC-15): done
   - 1.5 Unit tests with mocked JIRA API (CDC-16): done
 - **Epic 2** (CDC-40): In progress.
+  - 2.1 Generate code diff for a single ticket (CDC-41): done - `app/codegen/diff.py`'s `generate_diff()` feeds a CDC-15 `TicketSpec` to the headless agent, lets it edit real files in a worktree, then captures the actual `git diff` (not model free text) as `{diff_text, summary, files_changed}`. Stops short of commit/push/PR (Epic 3). Extended `ticket_workspace()` with `cleanup_on_success` so a successful run keeps its worktree alive for Epic 3 to commit from later; failure still always cleans up.
   - 2.2 Codegen works against a real repo checkout via git worktree (CDC-42): done
   - 2.7 Prefer CLAUDE_CODE_OAUTH_TOKEN over API key when available (CDC-50): done
-  - Bug (CDC-51): fixed - re-running a ticket after its worktree was cleaned up falsely raised WorktreeInProgressError, because the duplicate check looked at branch existence, not actual worktree checkout state (`git worktree remove` leaves the branch behind). `create_worktree()` now checks `git worktree list --porcelain`; a stale branch is force-deleted before reuse. Leftover branches are kept after `remove_worktree()` (not auto-deleted) for post-mortem inspection of a failed run.
-
-## Local dev
-```bash
-cd backend
-# activate your existing venv
-pip install -r requirements.txt
-cp .env.example .env   # fill in your own keys - see Team notes
-uvicorn app.main:app --reload --port 8000
-```
-Testing against real Teams: `ngrok http 8000` (update Azure Bot resource's Messaging endpoint to `<ngrok-url>/teams/messages` each time the tunnel restarts, unless using a reserved ngrok domain).
-
-## Team notes (for collaborators)
-- Each person needs their **own** `.env` (gitignored, never commit it): own `ANTHROPIC_API_KEY`, own `JIRA_API_TOKEN` (from id.atlassian.com/manage-profile/security/api-tokens), shared `JIRA_BASE_URL`/`JIRA_PROJECT_KEY=CDC`.
-- Branch and commit naming: include the Jira ticket key (e.g. `CDC-18-jira-client`, commit `"CDC-18 implement retry logic"`) so GitHub for Atlassian auto-links work.
-- When asking Claude Code to implement a story: point it at the Jira ticket key directly (Claude Code has read access to CDC) plus this file for conventions - don't re-paste requirements manually.
+  - Bug (CDC-51): fixed - re-running a ticket after its worktree was cleaned up falsely raised WorktreeInProgressError, because the duplicate check looked at branch existence, not actual worktree checkout state (`git worktree remove` leaves the branch behind). `create_worktree()` +
