@@ -7,6 +7,11 @@ Each in-flight ticket gets its own git worktree checked out off that
 clone, on a branch named feature/<TICKET>-<slug> - the same convention
 Epic 3's story 3.1 will use for its own branch creation, so the two stay
 consistent once that epic exists.
+
+Story 2.8 (CDC-52): list_ticket_worktrees()/delete_ticket_branch() support
+scripts/sweep_stale_worktrees.py, which removes worktrees CDC-41's
+cleanup_on_success=False deliberately left behind once they've sat past a
+retention window without being picked up for commit/PR.
 """
 
 import logging
@@ -15,7 +20,7 @@ import subprocess
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, List
+from typing import Iterator, List, Optional, Tuple
 
 from app.config import get_settings
 
@@ -79,25 +84,95 @@ def _worktree_path(clone_path: Path, ticket_key: str) -> Path:
     return clone_path.parent / "codegen-worktrees" / ticket_key
 
 
-def _branches_with_active_worktrees(clone_path: Path) -> set:
+def _parse_worktree_entries(porcelain_output: str) -> List[Tuple[Path, Optional[str]]]:
     """
-    Parse `git worktree list --porcelain` to find which branches currently
-    have a worktree actually checked out. This is the only reliable signal
-    for "in progress" - `git branch --list` can't tell the difference
-    between an active worktree and a branch left over from a prior run
-    whose worktree was already removed (CDC-51: `git worktree remove`
-    deletes the worktree directory but leaves the branch behind).
+    Parse `git worktree list --porcelain` into (path, branch) pairs - one
+    per worktree, including the canonical clone's own "main" worktree
+    entry. `branch` is None for a detached-HEAD entry (not something this
+    module's worktrees are ever created as, but git worktree list can
+    still contain other worktrees an operator made by hand).
     """
+    entries: List[Tuple[Path, Optional[str]]] = []
+    current_path: Optional[Path] = None
+    current_branch: Optional[str] = None
+
+    for line in porcelain_output.splitlines():
+        if line.startswith("worktree "):
+            if current_path is not None:
+                entries.append((current_path, current_branch))
+            current_path = Path(line[len("worktree "):].strip())
+            current_branch = None
+        elif line.startswith("branch "):
+            ref = line[len("branch "):].strip()
+            current_branch = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+
+    if current_path is not None:
+        entries.append((current_path, current_branch))
+
+    return entries
+
+
+def _list_worktree_entries(clone_path: Path) -> List[Tuple[Path, Optional[str]]]:
     result = _run_git(["worktree", "list", "--porcelain"], cwd=clone_path)
     if result.returncode != 0:
         raise WorkspaceError(f"git worktree list failed: {result.stderr.strip()}")
+    return _parse_worktree_entries(result.stdout)
 
-    branches = set()
-    for line in result.stdout.splitlines():
-        if line.startswith("branch "):
-            ref = line[len("branch "):].strip()
-            branches.add(ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref)
-    return branches
+
+def _branches_with_active_worktrees(clone_path: Path) -> set:
+    """
+    Find which branches currently have a worktree actually checked out.
+    This is the only reliable signal for "in progress" - `git branch
+    --list` can't tell the difference between an active worktree and a
+    branch left over from a prior run whose worktree was already removed
+    (CDC-51: `git worktree remove` deletes the worktree directory but
+    leaves the branch behind).
+    """
+    return {branch for _, branch in _list_worktree_entries(clone_path) if branch}
+
+
+def list_ticket_worktrees() -> List[TicketWorkspace]:
+    """
+    List every per-ticket worktree currently checked out off the canonical
+    clone - every `git worktree list` entry except the canonical clone's
+    own "main" worktree, which must never be identified or treated as a
+    per-ticket worktree (CDC-52), and any detached-HEAD entry, which this
+    module never creates and so isn't a ticket worktree either.
+
+    Used by scripts/sweep_stale_worktrees.py to find candidates for
+    removal; each ticket's worktree directory is named after its ticket
+    key (see _worktree_path()), which becomes TicketWorkspace.ticket_key.
+    """
+    clone_path = _canonical_clone_path()
+    resolved_clone_path = clone_path.resolve()
+
+    worktrees = []
+    for path, branch in _list_worktree_entries(clone_path):
+        if branch is None or path.resolve() == resolved_clone_path:
+            continue
+        worktrees.append(TicketWorkspace(ticket_key=path.name, branch=branch, path=path))
+    return worktrees
+
+
+def delete_ticket_branch(workspace: TicketWorkspace) -> None:
+    """
+    Force-delete `workspace.branch` from the canonical clone.
+
+    remove_worktree() deliberately leaves the branch behind (CDC-51) so a
+    single failed run stays inspectable. The stale-worktree sweep
+    (CDC-52) calls this afterward, once a worktree has aged past the
+    retention window without being picked up: at that point the branch
+    has had its window to be inspected or committed from, so it's deleted
+    too instead of accumulating forever.
+    """
+    clone_path = _canonical_clone_path()
+    result = _run_git(["branch", "-D", workspace.branch], cwd=clone_path)
+    if result.returncode != 0:
+        raise WorkspaceError(f"git branch -D failed for {workspace.ticket_key}: {result.stderr.strip()}")
+
+    logger.info(
+        "Deleted stale ticket branch", extra={"ticket_key": workspace.ticket_key, "branch": workspace.branch}
+    )
 
 
 def create_worktree(ticket_key: str, summary: str) -> TicketWorkspace:

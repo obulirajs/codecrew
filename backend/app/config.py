@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     # ANTHROPIC_API_KEY.
     claude_code_oauth_token: Optional[str] = None
 
+    # Story 2.8 (CDC-52): how long a per-ticket codegen worktree is kept
+    # after a successful CDC-41 run (which deliberately leaves it in place
+    # for Epic 3 to commit from) before scripts/sweep_stale_worktrees.py
+    # treats it as abandoned and removes it.
+    worktree_retention_hours: int = 48
+
     @property
     def cheap_model(self) -> str:
         return self.cheap_model_ollama if self.llm_provider == "ollama" else self.cheap_model_anthropic
