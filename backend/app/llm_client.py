@@ -11,6 +11,22 @@ from app.config import get_settings
 logger = logging.getLogger("codecrew.llm_client")
 
 
+class LLMResponseError(Exception):
+    """Raised when an Anthropic response contains no text content block - e.g. only extended-thinking or tool-use blocks - rather than an unrelated AttributeError from blindly indexing content[0]."""
+
+
+def _extract_text(content) -> str:
+    """
+    Find the actual text block by checking each block's type, instead of
+    assuming content[0] is always text - extended thinking (or any other
+    non-text block) can precede it (CDC-53).
+    """
+    for block in content:
+        if getattr(block, "type", None) == "text":
+            return block.text.strip()
+    raise LLMResponseError("Anthropic response contained no text content block.")
+
+
 def chat_completion(model: str, system: str, user_message: str, max_tokens: int = 512) -> str:
     settings = get_settings()
 
@@ -57,4 +73,4 @@ def chat_completion(model: str, system: str, user_message: str, max_tokens: int 
         },
     )
 
-    return response.content[0].text.strip()
+    return _extract_text(response.content)
