@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     jira_api_token: str
     jira_project_key: str
 
+    # Story 3.6 (CDC-28): PAT auth, not a GitHub App - registration/
+    # installation/JWT token-exchange is real overhead not justified at
+    # this project's scale.
+    github_token: str
+    github_owner: str
+    github_repo: str
+
     llm_provider: str = "ollama"
     cheap_model_anthropic: str = "claude-haiku-4-5-20251001"
     strong_model_anthropic: str = "claude-sonnet-5"
@@ -58,6 +65,14 @@ class Settings(BaseSettings):
     # for Epic 3 to commit from) before scripts/sweep_stale_worktrees.py
     # treats it as abandoned and removes it.
     worktree_retention_hours: int = 48
+
+    # Story 3.2 (CDC-24): commit author identity app/codegen/commit.py sets
+    # explicitly per-commit (via `git -c`), rather than relying on global
+    # git config being set up on whatever machine this runs on - a fresh
+    # machine has none, which would otherwise fail with "Please tell me
+    # who you are".
+    git_commit_author_name: str = "CodeCrew Bot"
+    git_commit_author_email: str = "noreply@codecrew.local"
 
     @property
     def cheap_model(self) -> str:

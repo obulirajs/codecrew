@@ -18,9 +18,11 @@ import pytest
 from app.codegen.workspace import (
     TicketWorkspace,
     WorkspaceError,
+    WorktreeNotFoundError,
     _branches_with_active_worktrees,
     _parse_worktree_entries,
     delete_ticket_branch,
+    find_ticket_worktree,
     list_ticket_worktrees,
     ticket_workspace,
 )
@@ -150,6 +152,29 @@ class TestListTicketWorktrees:
         ):
             with pytest.raises(WorkspaceError):
                 list_ticket_worktrees()
+
+
+class TestFindTicketWorktree:
+    def test_finds_matching_worktree_by_ticket_key(self):
+        with patch("app.codegen.workspace._canonical_clone_path", return_value=_CLONE_PATH), patch(
+            "app.codegen.workspace._run_git",
+            return_value=MagicMock(returncode=0, stdout=_PORCELAIN_OUTPUT, stderr=""),
+        ):
+            workspace = find_ticket_worktree("CDC-41")
+
+        assert workspace == TicketWorkspace(
+            ticket_key="CDC-41",
+            branch="feature/CDC-41-add-retry-logic",
+            path=Path("/repo/codegen-worktrees/CDC-41"),
+        )
+
+    def test_raises_not_found_when_no_matching_worktree(self):
+        with patch("app.codegen.workspace._canonical_clone_path", return_value=_CLONE_PATH), patch(
+            "app.codegen.workspace._run_git",
+            return_value=MagicMock(returncode=0, stdout=_PORCELAIN_OUTPUT, stderr=""),
+        ):
+            with pytest.raises(WorktreeNotFoundError):
+                find_ticket_worktree("CDC-999")
 
 
 class TestDeleteTicketBranch:

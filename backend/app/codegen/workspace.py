@@ -48,6 +48,10 @@ class WorktreeInProgressError(WorkspaceError):
     """
 
 
+class WorktreeNotFoundError(WorkspaceError):
+    """Raised by find_ticket_worktree() when no worktree is currently checked out for the given ticket key."""
+
+
 @dataclass
 class TicketWorkspace:
     ticket_key: str
@@ -152,6 +156,24 @@ def list_ticket_worktrees() -> List[TicketWorkspace]:
             continue
         worktrees.append(TicketWorkspace(ticket_key=path.name, branch=branch, path=path))
     return worktrees
+
+
+def find_ticket_worktree(ticket_key: str) -> TicketWorkspace:
+    """
+    Look up the currently-checked-out worktree for `ticket_key` - e.g. the
+    one CDC-41's generate_diff() left behind on success. For a caller that
+    only kept a ticket key and a CodegenResult around (not the
+    TicketWorkspace object itself), this is how a later step - CDC-24's
+    commit, CDC-23's push - finds it again.
+
+    Raises WorktreeNotFoundError if no worktree is currently checked out
+    for that ticket (e.g. it was already committed/pushed and cleaned up,
+    or swept as stale by CDC-52).
+    """
+    for workspace in list_ticket_worktrees():
+        if workspace.ticket_key == ticket_key:
+            return workspace
+    raise WorktreeNotFoundError(f"No checked-out worktree found for {ticket_key}.")
 
 
 def delete_ticket_branch(workspace: TicketWorkspace) -> None:
