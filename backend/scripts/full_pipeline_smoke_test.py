@@ -44,9 +44,16 @@ async def main() -> None:
     #     labels=[],
     # )
 
+    # spec = TicketSpec(
+    # summary="Add a CONTRIBUTING.md file",
+    # acceptance_criteria=["Create a CONTRIBUTING.md file at the repo root with a one-line note that this is a personal learning project, contributions welcome from friends only"],
+    # ticket_type="Task",
+    # labels=[],
+    # )
+
     spec = TicketSpec(
-    summary="Add a CONTRIBUTING.md file",
-    acceptance_criteria=["Create a CONTRIBUTING.md file at the repo root with a one-line note that this is a personal learning project, contributions welcome from friends only"],
+    summary="Add a divide function to backend/scripts/math_utils.py",
+    acceptance_criteria=["Create backend/scripts/math_utils.py with a function divide(a, b) that returns a / b, with no handling for b being zero"],
     ticket_type="Task",
     labels=[],
     )

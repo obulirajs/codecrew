@@ -73,6 +73,46 @@ def test_create_pull_request_validation_error_without_json_body(client):
             client.create_pull_request(title="t", head="feature/x", base="main")
 
 
+def test_self_review_error_with_dict_shaped_errors_surfaces_detailed_message(client):
+    """
+    Story 4.1 (CDC-30): GitHub rejects a token approving its own PR with a
+    422 whose body carries the real reason in "errors[].message" (dict
+    shape, seen on PR-creation 422s) - this detail, not just the generic
+    HTTP reason phrase, must reach the raised exception.
+    """
+    error_payload = {
+        "message": "Validation Failed",
+        "errors": [{"resource": "PullRequestReview", "code": "custom", "message": "Can not approve your own pull request"}],
+    }
+    with patch("httpx.Client.request", return_value=_response(422, error_payload)):
+        with pytest.raises(GitHubValidationError, match="Can not approve your own pull request"):
+            client.create_pull_request_review(7, event="APPROVE", body="Looks good")
+
+
+def test_self_review_error_with_string_shaped_errors_surfaces_detailed_message(client):
+    """
+    Story 4.1 (CDC-30): review-endpoint 422s carry "errors" as a list of
+    plain strings, not {message: ...} objects (e.g. GitHub's actual
+    "Review Can not request changes on your own pull request" response) -
+    the original fix only handled the dict shape and silently missed this
+    one, which is exactly what hid the real error during this story's
+    testing.
+    """
+    error_payload = {
+        "message": "Unprocessable Entity",
+        "errors": ["Review Can not request changes on your own pull request"],
+    }
+    with patch("httpx.Client.request", return_value=_response(422, error_payload)):
+        with pytest.raises(GitHubValidationError, match="Review Can not request changes on your own pull request"):
+            client.create_pull_request_review(7, event="REQUEST_CHANGES", body="Needs work")
+
+
+def test_auth_failure_surfaces_detailed_message_from_body(client):
+    with patch("httpx.Client.request", return_value=_response(403, {"message": "Bad credentials"})):
+        with pytest.raises(GitHubAuthenticationError, match="Bad credentials"):
+            client.get_pull_request(7)
+
+
 def test_create_pull_request_builds_expected_request(client):
     with patch("httpx.Client.request", return_value=_response(201, PR_PAYLOAD)) as mock_request:
         result = client.create_pull_request(title="My PR", head="feature/x", base="main", body="details")
@@ -124,6 +164,30 @@ def test_get_repository_success(client):
     assert result == repo_payload
     args, _ = mock_request.call_args
     assert args == ("GET", f"/repos/{client.owner}/{client.repo}")
+
+
+def test_create_pull_request_review_with_comments(client):
+    review_payload = {"id": 99, "state": "CHANGES_REQUESTED"}
+    comments = [{"path": "app/foo.py", "line": 10, "body": "Possible off-by-one error."}]
+    with patch("httpx.Client.request", return_value=_response(200, review_payload)) as mock_request:
+        result = client.create_pull_request_review(
+            7, event="REQUEST_CHANGES", body="Overall summary", comments=comments
+        )
+
+    assert result == review_payload
+    args, kwargs = mock_request.call_args
+    assert args == ("POST", f"/repos/{client.owner}/{client.repo}/pulls/7/reviews")
+    assert kwargs["json"] == {"event": "REQUEST_CHANGES", "body": "Overall summary", "comments": comments}
+
+
+def test_create_pull_request_review_without_comments_omits_comments_key(client):
+    review_payload = {"id": 100, "state": "APPROVED"}
+    with patch("httpx.Client.request", return_value=_response(200, review_payload)) as mock_request:
+        result = client.create_pull_request_review(7, event="APPROVE", body="Looks good")
+
+    assert result == review_payload
+    _, kwargs = mock_request.call_args
+    assert kwargs["json"] == {"event": "APPROVE", "body": "Looks good"}
 
 
 def test_get_pull_request_files_success(client):
