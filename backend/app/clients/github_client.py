@@ -147,6 +147,16 @@ class GitHubClient:
         """Fetch this repo's metadata - most notably `default_branch`, so callers never have to hardcode it."""
         return self._request("GET", f"/repos/{self.owner}/{self.repo}")
 
+    def get_authenticated_user(self) -> dict:
+        """
+        Fetch the identity GITHUB_TOKEN itself authenticates as (`GET
+        /user`, not scoped to this client's owner/repo). Story 3.4
+        (CDC-26) uses this to resolve "me" in "PRs assigned to me" -
+        there's no real per-user identity mapping yet (Epic 8 concern),
+        so "me" is whichever account the configured token belongs to.
+        """
+        return self._request("GET", "/user")
+
     def create_pull_request_review(
         self, pr_number: int, event: str, body: str, comments: Optional[List[dict]] = None
     ) -> dict:

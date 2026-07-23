@@ -166,6 +166,16 @@ def test_get_repository_success(client):
     assert args == ("GET", f"/repos/{client.owner}/{client.repo}")
 
 
+def test_get_authenticated_user_success(client):
+    user_payload = {"login": "octocat", "id": 1}
+    with patch("httpx.Client.request", return_value=_response(200, user_payload)) as mock_request:
+        result = client.get_authenticated_user()
+
+    assert result == user_payload
+    args, _ = mock_request.call_args
+    assert args == ("GET", "/user")
+
+
 def test_create_pull_request_review_with_comments(client):
     review_payload = {"id": 99, "state": "CHANGES_REQUESTED"}
     comments = [{"path": "app/foo.py", "line": 10, "body": "Possible off-by-one error."}]
