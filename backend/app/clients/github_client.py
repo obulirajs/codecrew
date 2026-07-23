@@ -163,6 +163,17 @@ class GitHubClient:
             payload["comments"] = comments
         return self._request("POST", f"/repos/{self.owner}/{self.repo}/pulls/{pr_number}/reviews", json=payload)
 
+    def merge_pull_request(self, pr_number: int) -> dict:
+        """
+        Merge a PR via GitHub's PR-merge endpoint (`pulls/{pr}/merge`) -
+        story 4.3's (CDC-32) auto-merge execution step, the single real
+        "merge into main" action in this project. Callers must only reach
+        this after both the rules engine (evaluate_merge_eligibility())
+        and the auto_merge_enabled config flag (CDC-33) independently
+        allow it - not this client's concern, which stays a pure REST call.
+        """
+        return self._request("PUT", f"/repos/{self.owner}/{self.repo}/pulls/{pr_number}/merge")
+
     def get_pull_request_files(self, pr_number: int) -> List[dict]:
         """
         Fetch a PR's changed files, each with its `patch` (unified diff

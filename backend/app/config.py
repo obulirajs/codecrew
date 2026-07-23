@@ -8,8 +8,9 @@ for secrets, no hardcoding.
 """
 
 from functools import lru_cache
-from typing import Optional
+from typing import List, Optional
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -73,6 +74,16 @@ class Settings(BaseSettings):
     # who you are".
     git_commit_author_name: str = "CodeCrew Bot"
     git_commit_author_email: str = "noreply@codecrew.local"
+
+    # Stories 4.3/4.4 (CDC-32/CDC-33) - built together: the rules engine and
+    # its off-by-default guarantee are one feature, not separable work.
+    # auto_merge_enabled defaults false, so execute_auto_merge() never
+    # merges regardless of how many rules pass until this is explicitly
+    # set true.
+    auto_merge_enabled: bool = False
+    max_auto_merge_lines: int = 200
+    auto_merge_sensitive_paths: List[str] = Field(default_factory=lambda: ["config.py", ".env*", "clients/*"])
+    auto_merge_allowed_ticket_types: List[str] = Field(default_factory=lambda: ["Chore", "Docs", "Task"])
 
     @property
     def cheap_model(self) -> str:

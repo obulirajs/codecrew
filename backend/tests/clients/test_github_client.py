@@ -190,6 +190,16 @@ def test_create_pull_request_review_without_comments_omits_comments_key(client):
     assert kwargs["json"] == {"event": "APPROVE", "body": "Looks good"}
 
 
+def test_merge_pull_request_success(client):
+    merge_payload = {"merged": True, "sha": "abc123", "message": "Pull Request successfully merged"}
+    with patch("httpx.Client.request", return_value=_response(200, merge_payload)) as mock_request:
+        result = client.merge_pull_request(7)
+
+    assert result == merge_payload
+    args, _ = mock_request.call_args
+    assert args == ("PUT", f"/repos/{client.owner}/{client.repo}/pulls/7/merge")
+
+
 def test_get_pull_request_files_success(client):
     files_payload = [
         {"filename": "app/foo.py", "status": "modified", "patch": "@@ -1,2 +1,3 @@\n+added line"},
