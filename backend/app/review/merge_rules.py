@@ -23,15 +23,28 @@ Critical constraints from the ticket:
   restriction means every review posts as a plain COMMENT. This function
   takes no GitHub review-decision parameter at all, so that mistake isn't
   representable here.
+
+Story 4.5 (CDC-34): every evaluation is also logged to the "codecrew.audit"
+logger - a name distinct from general app logs so audit entries are
+independently filterable/greppable even before a dedicated audit store
+exists (Epic 8 story 8.3) - carrying ticket_key and pr_number alongside
+the reasons trace, so a decision can always be tied back to the Jira
+ticket it originated from. `executed` is always False here: this function
+only ever computes a decision, never performs a merge (that's
+auto_merge.py's execute_auto_merge(), which logs its own outcome line to
+the same logger).
 """
 
 import fnmatch
+import logging
 from typing import List, Optional
 
 from pydantic import BaseModel
 
 from app.config import get_settings
 from app.review.pr_review import ReviewResult
+
+audit_logger = logging.getLogger("codecrew.audit")
 
 
 class MergeDecision(BaseModel):
@@ -53,6 +66,8 @@ def _matches_sensitive_path(file_path: str, patterns: List[str]) -> bool:
 
 
 def evaluate_merge_eligibility(
+    ticket_key: str,
+    pr_number: int,
     review: ReviewResult,
     ci_status: Optional[str],
     ticket_type: str,
@@ -64,7 +79,10 @@ def evaluate_merge_eligibility(
     MergeDecision - `allowed` is True only if every rule passes;
     `reasons` always carries one PASS/FAIL entry per rule (not just
     failures), so both "which rule(s) blocked this" and "which rule(s)
-    permitted this" are visible from the same trace.
+    permitted this" are visible from the same trace. `ticket_key` and
+    `pr_number` don't affect any rule - they're threaded through purely so
+    the audit log line below can tie this decision back to its
+    originating ticket and PR.
     """
     settings = get_settings()
     reasons: List[str] = []
@@ -106,4 +124,16 @@ def evaluate_merge_eligibility(
         )
         allowed = False
 
-    return MergeDecision(allowed=allowed, reasons=reasons)
+    decision = MergeDecision(allowed=allowed, reasons=reasons)
+
+    audit_logger.info(
+        "Merge eligibility evaluated",
+        extra={
+            "ticket_key": ticket_key,
+            "pr_number": pr_number,
+            "executed": False,
+            "allowed": decision.allowed,
+            "reasons": decision.reasons,
+        },
+    )
+    return decision

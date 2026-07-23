@@ -18,6 +18,8 @@ _REQUEST_CHANGES = ReviewResult(
 
 def _evaluate(**overrides):
     defaults = dict(
+        ticket_key="CDC-99",
+        pr_number=42,
         review=_APPROVE,
         ci_status="success",
         ticket_type="Task",
@@ -89,3 +91,21 @@ class TestEvaluateMergeEligibility:
         decision = _evaluate(review=_REQUEST_CHANGES, ci_status=None, diff_lines=500, ticket_type="Story")
         assert decision.allowed is False
         assert len(decision.reasons) == 5
+
+
+class TestAuditLogging:
+    def test_decision_for_a_ticket_key_can_be_found_in_captured_log_output(self, caplog):
+        """Story 4.5 (CDC-34): a decision must be filterable by ticket_key from log output."""
+        import logging
+
+        with caplog.at_level(logging.INFO, logger="codecrew.audit"):
+            _evaluate(ticket_key="CDC-777", pr_number=42)
+            _evaluate(ticket_key="CDC-111", pr_number=7)
+
+        matching = [r for r in caplog.records if getattr(r, "ticket_key", None) == "CDC-777"]
+        assert len(matching) == 1
+        record = matching[0]
+        assert record.name == "codecrew.audit"
+        assert record.pr_number == 42
+        assert record.executed is False
+        assert isinstance(record.reasons, list) and len(record.reasons) == 5

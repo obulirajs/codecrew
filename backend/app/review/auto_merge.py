@@ -12,6 +12,12 @@ execute_auto_merge() independently re-checks both gates itself - config
 so this function is never reachable with auto-merge disabled regardless
 of how many rules passed (CDC-33's core guarantee, verified here since
 the two stories are one feature).
+
+Story 4.5 (CDC-34): every outcome - blocked by config, blocked by rules,
+or executed - is logged to the "codecrew.audit" logger (same distinct
+name merge_rules.py's evaluate_merge_eligibility() uses), carrying
+ticket_key, pr_number, an explicit `executed` bool, and the full reasons
+trace, regardless of which of the three outcomes occurred.
 """
 
 import logging
@@ -21,39 +27,39 @@ from app.clients.github_client import GitHubClient
 from app.config import get_settings
 from app.review.merge_rules import MergeDecision
 
-logger = logging.getLogger("codecrew.auto_merge")
+audit_logger = logging.getLogger("codecrew.audit")
 
 
-def execute_auto_merge(pr_number: int, decision: MergeDecision) -> Optional[dict]:
+def execute_auto_merge(ticket_key: str, pr_number: int, decision: MergeDecision) -> Optional[dict]:
     """
     Merge `pr_number` via GitHub's merge_pull_request(), but only if
     settings.auto_merge_enabled is True AND decision.allowed is True.
-    Returns None (no GitHub call made) if either gate isn't met - logging
-    which specific rule(s) blocked it when the decision itself disallowed
-    it. Returns GitHub's merge response, logging which rule(s) permitted
-    it, when the merge is actually performed.
+    Returns None (no GitHub call made) if either gate isn't met, returns
+    GitHub's merge response if the merge is actually performed. Every
+    outcome is logged as a single audit line via the codecrew.audit
+    logger, with `executed` reflecting whether a merge actually happened.
     """
     settings = get_settings()
 
     if not settings.auto_merge_enabled:
-        logger.info(
-            "Auto-merge disabled by config - not merging",
-            extra={"pr_number": pr_number},
+        audit_logger.info(
+            "Auto-merge decision: blocked by config",
+            extra={"ticket_key": ticket_key, "pr_number": pr_number, "executed": False, "reasons": decision.reasons},
         )
         return None
 
     if not decision.allowed:
-        logger.info(
-            "Auto-merge blocked by rules - not merging",
-            extra={"pr_number": pr_number, "reasons": decision.reasons},
+        audit_logger.info(
+            "Auto-merge decision: blocked by rules",
+            extra={"ticket_key": ticket_key, "pr_number": pr_number, "executed": False, "reasons": decision.reasons},
         )
         return None
 
     with GitHubClient() as client:
         result = client.merge_pull_request(pr_number)
 
-    logger.info(
-        "Auto-merged pull request",
-        extra={"pr_number": pr_number, "reasons": decision.reasons},
+    audit_logger.info(
+        "Auto-merge decision: executed",
+        extra={"ticket_key": ticket_key, "pr_number": pr_number, "executed": True, "reasons": decision.reasons},
     )
     return result
