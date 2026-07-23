@@ -176,6 +176,34 @@ def test_get_authenticated_user_success(client):
     assert args == ("GET", "/user")
 
 
+def test_get_git_ref_success(client):
+    ref_payload = {"ref": "refs/heads/main", "object": {"sha": "abc123"}}
+    with patch("httpx.Client.request", return_value=_response(200, ref_payload)) as mock_request:
+        result = client.get_git_ref("heads/main")
+
+    assert result == ref_payload
+    args, _ = mock_request.call_args
+    assert args == ("GET", f"/repos/{client.owner}/{client.repo}/git/ref/heads/main")
+
+
+def test_create_git_ref_builds_expected_request(client):
+    ref_payload = {"ref": "refs/heads/my-branch", "object": {"sha": "abc123"}}
+    with patch("httpx.Client.request", return_value=_response(201, ref_payload)) as mock_request:
+        result = client.create_git_ref(ref="refs/heads/my-branch", sha="abc123")
+
+    assert result == ref_payload
+    args, kwargs = mock_request.call_args
+    assert args == ("POST", f"/repos/{client.owner}/{client.repo}/git/refs")
+    assert kwargs["json"] == {"ref": "refs/heads/my-branch", "sha": "abc123"}
+
+
+def test_create_git_ref_already_exists_raises_validation_error(client):
+    error_payload = {"message": "Reference already exists"}
+    with patch("httpx.Client.request", return_value=_response(422, error_payload)):
+        with pytest.raises(GitHubValidationError, match="Reference already exists"):
+            client.create_git_ref(ref="refs/heads/my-branch", sha="abc123")
+
+
 def test_create_pull_request_review_with_comments(client):
     review_payload = {"id": 99, "state": "CHANGES_REQUESTED"}
     comments = [{"path": "app/foo.py", "line": 10, "body": "Possible off-by-one error."}]

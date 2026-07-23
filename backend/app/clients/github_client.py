@@ -147,6 +147,26 @@ class GitHubClient:
         """Fetch this repo's metadata - most notably `default_branch`, so callers never have to hardcode it."""
         return self._request("GET", f"/repos/{self.owner}/{self.repo}")
 
+    def get_git_ref(self, ref: str) -> dict:
+        """
+        Fetch a single git ref (e.g. "heads/main") - `["object"]["sha"]` is
+        the commit SHA it currently points at. Story 3.5 (CDC-27) uses
+        this to find the default branch's current commit before creating
+        a new ref from it.
+        """
+        return self._request("GET", f"/repos/{self.owner}/{self.repo}/git/ref/{ref}")
+
+    def create_git_ref(self, ref: str, sha: str) -> dict:
+        """
+        Create a git ref (`git/refs`) - story 3.5's (CDC-27) ad-hoc branch
+        creation, a pure REST operation with no local worktree/clone
+        involved. `ref` must be the full form (e.g. "refs/heads/my-branch");
+        `sha` is the commit it should point at. Raises GitHubValidationError
+        (422) if a ref with that name already exists.
+        """
+        payload = {"ref": ref, "sha": sha}
+        return self._request("POST", f"/repos/{self.owner}/{self.repo}/git/refs", json=payload)
+
     def get_authenticated_user(self) -> dict:
         """
         Fetch the identity GITHUB_TOKEN itself authenticates as (`GET
